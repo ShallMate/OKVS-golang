@@ -114,11 +114,9 @@ func (r *OKVS) Encode(kvs []KV) *OKVS {
 		//reszeroBytes := make([]byte, 4)
 		res := bitarray.New(0)
 		res = res.ToWidth(32, bitarray.AlignRight)
-		for j := 0; j < r.M; j++ {
+		for j := systems[i].Pos; j < systems[i].Pos+r.W; j++ {
 			if systems[i].Row.BitAt(j) == 1 {
 				r.P[j] = r.P[j].ToWidth(32, bitarray.AlignRight)
-				//fmt.Println(r.P[j])
-				//fmt.Println(res)
 				res = res.Xor(r.P[j])
 			}
 		}
@@ -132,7 +130,7 @@ func (r *OKVS) Decode(key []byte) *big.Int {
 	row := r.hash2(pos, key)
 	res := bitarray.New(0)
 	res = res.ToWidth(32, bitarray.AlignRight)
-	for j := 0; j < r.M; j++ {
+	for j := pos; j < pos+r.W; j++ {
 		if row.BitAt(j) == 1 {
 			//r.P[j] = r.P[j].ToWidth(32, bitarray.AlignRight)
 			res = res.Xor(r.P[j])

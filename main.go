@@ -34,8 +34,9 @@ func Testcoding() {
 }
 
 func main() {
-	n := 1000 // 假设长度为 5
-	m := int(math.Round(float64(n) * 1.03))
+	n := 1000
+	e := 1.03
+	m := int(math.Round(float64(n) * e))
 
 	// 创建长度为 n 的 KV 结构体切片
 	kvs := make([]okvs.KV, n)
@@ -48,10 +49,10 @@ func main() {
 	}
 	//fmt.Printf("KV slice: %+v\n", kvs)
 	okvs := okvs.OKVS{
-		N: n,                             // 假设 N 的长度为 10
-		M: m,                             // 假设 M 的长度为 10
-		W: 360,                           // 假设 W 的长度为 32
-		P: make([]*bitarray.BitArray, m), // 初始化 P 切片长度为 10
+		N: n,
+		M: m,
+		W: 360,
+		P: make([]*bitarray.BitArray, m),
 	}
 	okvs.Encode(kvs)
 	for i := 0; i < int(n); i++ {
