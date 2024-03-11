@@ -17,19 +17,6 @@ type System struct {
 	Value *bitarray.BitArray
 }
 
-/*
-docstring for OKVS
-:n: rows
-:m: columns
-:w: length of band
-The choice of parameters:
-m = (1 + epsilon)n
-w = O(lambda / epsilon + log n)
-For example:
-m = 2^10, epsilon = 0.1,
-==> n = (1+0.1) * 2^10
-==> w = (lambda + 19.830) / 0.2751
-*/
 type OKVS struct {
 	N int //okvs存储的k-v长度
 	M int //okvs的实际长度
@@ -59,12 +46,8 @@ func (r *OKVS) hash2(pos int, key []byte) *bitarray.BitArray {
 	bandsize := int(r.W) / 8
 	hashBytes := HashToFixedSize(bandsize, key)
 	band := bitarray.NewFromBytes(hashBytes, 0, r.W)
-	//fmt.Println(pos)
-	//fmt.Println("band1=", band)
-	band = band.ToWidth(r.W+pos, bitarray.AlignRight)
-	//fmt.Println("band2=", band)
-	band = band.ToWidth(r.M, bitarray.AlignLeft)
-	//fmt.Println("band3=", band)
+	//band = band.ToWidth(r.W+pos, bitarray.AlignRight)
+	//band = band.ToWidth(r.M, bitarray.AlignLeft)
 	return band
 }
 
@@ -85,20 +68,24 @@ func (r *OKVS) Encode(kvs []KV) *OKVS {
 		return nil
 	}
 	systems := r.Init(kvs)
+	//fmt.Println("初始化完毕")
 	sort.Slice(systems, func(i, j int) bool {
 		return systems[i].Pos < systems[j].Pos
 	})
+	//fmt.Println("排序完毕")
 	piv := make([]int, r.N)
 	for i := range piv {
 		piv[i] = -1
 	}
 	for i := 0; i < r.N; i++ {
-		for j := systems[i].Pos; j < r.W+systems[i].Pos; j++ {
+		//fmt.Println(i)
+		for j := 0; j < r.W; j++ {
 			if systems[i].Row.BitAt(j) == 1 {
-				piv[i] = j
+				piv[i] = j + systems[i].Pos
 				for k := i + 1; k < r.N; k++ {
-					if systems[k].Pos <= piv[i] && systems[k].Row.BitAt(piv[i]) == 1 {
-						systems[k].Row = systems[k].Row.Xor(systems[i].Row)
+					if systems[k].Pos <= piv[i] && systems[k].Row.BitAt(piv[i]-systems[k].Pos) == 1 {
+						rowi := systems[i].Row.ShiftLeft(systems[k].Pos - systems[i].Pos)
+						systems[k].Row = systems[k].Row.Xor(rowi)
 						systems[k].Value = systems[k].Value.Xor(systems[i].Value)
 					}
 				}
@@ -114,10 +101,11 @@ func (r *OKVS) Encode(kvs []KV) *OKVS {
 		//reszeroBytes := make([]byte, 4)
 		res := bitarray.New(0)
 		res = res.ToWidth(32, bitarray.AlignRight)
-		for j := systems[i].Pos; j < systems[i].Pos+r.W; j++ {
+		for j := 0; j < r.W; j++ {
 			if systems[i].Row.BitAt(j) == 1 {
-				r.P[j] = r.P[j].ToWidth(32, bitarray.AlignRight)
-				res = res.Xor(r.P[j])
+				index := systems[i].Pos + j
+				r.P[index] = r.P[index].ToWidth(32, bitarray.AlignRight)
+				res = res.Xor(r.P[index])
 			}
 		}
 		r.P[piv[i]] = res.Xor(systems[i].Value)
@@ -130,9 +118,9 @@ func (r *OKVS) Decode(key []byte) *big.Int {
 	row := r.hash2(pos, key)
 	res := bitarray.New(0)
 	res = res.ToWidth(32, bitarray.AlignRight)
-	for j := pos; j < pos+r.W; j++ {
-		if row.BitAt(j) == 1 {
-			//r.P[j] = r.P[j].ToWidth(32, bitarray.AlignRight)
+	for j := pos; j < r.W+pos; j++ {
+		if row.BitAt(j-pos) == 1 {
+			//index := j + pos
 			res = res.Xor(r.P[j])
 		}
 	}
