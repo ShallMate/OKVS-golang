@@ -4,7 +4,9 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math/big"
+	"runtime"
 	"sort"
+	"sync"
 
 	"github.com/tunabay/go-bitarray"
 	"golang.org/x/crypto/blake2b"
@@ -21,7 +23,12 @@ type OKVS struct {
 	N int //okvs存储的k-v长度
 	M int //okvs的实际长度
 	W int //随机块的长度
+	R int // hashrange
 	P []*bitarray.BitArray
+}
+
+func init() {
+	runtime.GOMAXPROCS(runtime.NumCPU()) // 使用所有可用的CPU核心
 }
 
 type KV struct {
@@ -30,20 +37,18 @@ type KV struct {
 }
 
 func HashToFixedSize(bytesize int, key []byte) []byte {
-	//fmt.Println(bytesize)
 	hash, _ := blake2b.New(bytesize, []byte(key))
 	return hash.Sum(nil)[:]
 }
 
 func (r *OKVS) hash1(bytesize int, key []byte) int {
-	hashRange := r.M - r.W
 	hashkey := HashToFixedSize(bytesize, key)
-	hashkeyint := int(binary.BigEndian.Uint32(hashkey)) % hashRange
+	hashkeyint := int(binary.BigEndian.Uint32(hashkey)) % r.R
 	return hashkeyint
 }
 
 func (r *OKVS) hash2(pos int, key []byte) *bitarray.BitArray {
-	bandsize := int(r.W) / 8
+	bandsize := r.W / 8
 	hashBytes := HashToFixedSize(bandsize, key)
 	band := bitarray.NewFromBytes(hashBytes, 0, r.W)
 	//band = band.ToWidth(r.W+pos, bitarray.AlignRight)
@@ -51,14 +56,31 @@ func (r *OKVS) hash2(pos int, key []byte) *bitarray.BitArray {
 	return band
 }
 
+func (r *OKVS) SetLine(wg *sync.WaitGroup, i int, system *System, kv *KV) {
+	defer wg.Done()
+	system.Pos = r.hash1(4, kv.Key)
+	system.Row = r.hash2(system.Pos, kv.Key)
+	system.Value = bitarray.NewFromInt(big.NewInt(int64(kv.Value)))
+	system.Value = system.Value.ToWidth(32, bitarray.AlignRight)
+}
+
+func (r *OKVS) ShiftRow(wg *sync.WaitGroup, pivi int, systemk *System, systemi *System) {
+	//defer wg.Done()
+	if systemk.Pos <= pivi && systemk.Row.BitAt(pivi-systemk.Pos) == 1 {
+		rowi := systemi.Row.ShiftLeft(systemk.Pos - systemi.Pos)
+		systemk.Row = systemk.Row.Xor(rowi)
+		systemk.Value = systemk.Value.Xor(systemi.Value)
+	}
+}
+
 func (r *OKVS) Init(kvs []KV) []System {
+	var wg sync.WaitGroup
 	systems := make([]System, r.N)
 	for i := 0; i < r.N; i++ {
-		systems[i].Pos = r.hash1(4, kvs[i].Key)
-		systems[i].Row = r.hash2(systems[i].Pos, kvs[i].Key)
-		systems[i].Value = bitarray.NewFromInt(big.NewInt(int64(kvs[i].Value)))
-		systems[i].Value = systems[i].Value.ToWidth(32, bitarray.AlignRight)
+		wg.Add(1)
+		go r.SetLine(&wg, i, &systems[i], &kvs[i])
 	}
+	wg.Wait()
 	return systems
 }
 
@@ -77,18 +99,16 @@ func (r *OKVS) Encode(kvs []KV) *OKVS {
 	for i := range piv {
 		piv[i] = -1
 	}
+	var wg sync.WaitGroup
 	for i := 0; i < r.N; i++ {
-		//fmt.Println(i)
 		for j := 0; j < r.W; j++ {
 			if systems[i].Row.BitAt(j) == 1 {
 				piv[i] = j + systems[i].Pos
 				for k := i + 1; k < r.N; k++ {
-					if systems[k].Pos <= piv[i] && systems[k].Row.BitAt(piv[i]-systems[k].Pos) == 1 {
-						rowi := systems[i].Row.ShiftLeft(systems[k].Pos - systems[i].Pos)
-						systems[k].Row = systems[k].Row.Xor(rowi)
-						systems[k].Value = systems[k].Value.Xor(systems[i].Value)
-					}
+					//wg.Add(1)
+					r.ShiftRow(&wg, piv[i], &systems[k], &systems[i])
 				}
+				//wg.Wait()
 				break
 			}
 		}

@@ -3,8 +3,9 @@ package main
 import (
 	"fmt"
 	"math"
-	"math/big"
 	"math/rand"
+	"os"
+	"runtime/pprof"
 	"time"
 
 	okvs "github.com/RBOKVS/OKVS"
@@ -19,31 +20,6 @@ func generateRandomBytes(length int) []byte {
 	return bytes
 }
 
-func Testcoding() {
-	for {
-		value := rand.Uint32()
-		Value := bitarray.NewFromInt(big.NewInt(int64(value)))
-		Value = Value.ToWidth(32, bitarray.AlignRight)
-		value1 := Value.ToInt().Int64()
-		if value1 != int64(value) {
-			fmt.Println("coding fail")
-		}
-		fmt.Println(value)
-		fmt.Println(value1)
-	}
-
-}
-
-func TestXorAt() {
-	ba1 := bitarray.MustParse("1010-1010 1010-1010 10")
-	ba2 := bitarray.MustParse("1111-0000")
-	fmt.Println(ba1)
-	fmt.Println(ba2)
-	fmt.Printf("% b\n", ba1.XorAt(0, ba2))
-	fmt.Printf("% b\n", ba1.XorAt(1, ba2))
-	fmt.Printf("% b\n", ba1.XorAt(10, ba2))
-}
-
 func TestLeft() {
 	b1 := bitarray.MustParse("100111")
 	//b2 := bitarray.MustParse("101000")
@@ -53,7 +29,11 @@ func TestLeft() {
 }
 
 func main() {
-	n := 200000
+	f, _ := os.OpenFile("cpu.profile", os.O_CREATE|os.O_RDWR, 0644)
+	defer f.Close()
+	pprof.StartCPUProfile(f)
+	defer pprof.StopCPUProfile()
+	n := 10000
 	e := 1.03
 	m := int(math.Round(float64(n) * e))
 
@@ -67,10 +47,12 @@ func main() {
 		kvs[i] = okvs.KV{Key: key, Value: value} // 将key和value赋值给KV结构体
 	}
 	//fmt.Printf("KV slice: %+v\n", kvs)
+	w := 360
 	okvs := okvs.OKVS{
 		N: n,
 		M: m,
-		W: 360,
+		W: w,
+		R: m - w,
 		P: make([]*bitarray.BitArray, m),
 	}
 	s1 := time.Now()
@@ -93,6 +75,10 @@ func main() {
 
 /*
 func main() {
+	f, _ := os.OpenFile("cpu.profile", os.O_CREATE|os.O_RDWR, 0644)
+	defer f.Close()
+	pprof.StartCPUProfile(f)
+	defer pprof.StopCPUProfile()
 	n := 200000
 	e := 1.03
 	m := int(math.Round(float64(n) * e))
