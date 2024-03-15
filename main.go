@@ -3,12 +3,14 @@ package main
 import (
 	"fmt"
 	"math"
+	"math/big"
 	"math/rand"
 	"os"
 	"runtime/pprof"
 	"time"
 
 	okvs "github.com/RBOKVS/OKVS"
+	"github.com/bits-and-blooms/bitset"
 	"github.com/tunabay/go-bitarray"
 )
 
@@ -26,6 +28,39 @@ func TestLeft() {
 	b1t := b1.ShiftLeft(3)
 	fmt.Println(b1t)
 	fmt.Println(b1)
+}
+
+func TestXor() {
+	b1 := bitarray.NewBuffer(360)
+	b2 := bitarray.NewBuffer(360)
+	s := time.Now()
+	b1.XorAt(0, b2)
+	e := time.Since(s)
+	fmt.Println(e)
+	fmt.Println(b1)
+}
+
+func TestXor1() {
+	b1 := bitset.New(365)
+	b1.SetAll()
+	b2 := bitset.New(360)
+	b2.SetAll()
+	s := time.Now()
+	b1.InPlaceSymmetricDifference(b2)
+	e := time.Since(s)
+	fmt.Println(e)
+	fmt.Println(b2.String())
+}
+
+func TestXor2() {
+	a, _ := new(big.Int).SetString("123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890", 10)
+	bigB, _ := new(big.Int).SetString("987654321098765432109876543210987654321098765432109876543210987654321098765432109876543210", 10)
+
+	// 重置计时器
+	s := time.Now()
+	a.Xor(a, bigB)
+	e := time.Since(s)
+	fmt.Println(e)
 }
 
 func main() {
@@ -71,6 +106,8 @@ func main() {
 		//fmt.Println(kvs[i].Value)
 
 	}
+	TestXor()
+	TestXor2()
 }
 
 /*
