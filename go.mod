@@ -1,4 +1,4 @@
-module github.com/RBOKVS
+module github.com/OurOKVS
 
 go 1.21.1
 

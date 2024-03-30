@@ -64,12 +64,14 @@ func (r *OKVS) SetLine(wg *sync.WaitGroup, i int, system *System, kv *KV) {
 	system.Value = system.Value.ToWidth(32, bitarray.AlignRight)
 }
 
-func (r *OKVS) ShiftRow(wg *sync.WaitGroup, pivi int, systemk *System, systemi *System) {
+func ShiftRow(pivi int, systemk *System, systemi *System) {
 	//defer wg.Done()
-	if systemk.Pos <= pivi && systemk.Row.BitAt(pivi-systemk.Pos) == 1 {
-		rowi := systemi.Row.ShiftLeft(systemk.Pos - systemi.Pos)
-		systemk.Row = systemk.Row.Xor(rowi)
-		systemk.Value = systemk.Value.Xor(systemi.Value)
+	if systemk.Pos <= pivi {
+		if systemk.Row.BitAt(pivi-systemk.Pos) == 1 {
+			rowi := systemi.Row.ShiftLeft(systemk.Pos - systemi.Pos)
+			systemk.Row = systemk.Row.Xor(rowi)
+			systemk.Value = systemk.Value.Xor(systemi.Value)
+		}
 	}
 }
 
@@ -99,18 +101,25 @@ func (r *OKVS) Encode(kvs []KV) *OKVS {
 	for i := range piv {
 		piv[i] = -1
 	}
-	var wg sync.WaitGroup
-	for i := 0; i < r.N; i++ {
-		for j := 0; j < r.W; j++ {
+	//var wg sync.WaitGroup
+	N := r.N
+	W := r.W
+	//s := time.Now()
+	for i := 0; i < N; i++ {
+		//fmt.Println(i)
+		for j := 0; j < W; j++ {
+			//fmt.Println(j)
 			if systems[i].Row.BitAt(j) == 1 {
 				piv[i] = j + systems[i].Pos
-				for k := i + 1; k < r.N; k++ {
+				for k := i + 1; k < N; k++ {
 					//wg.Add(1)
-					r.ShiftRow(&wg, piv[i], &systems[k], &systems[i])
+					ShiftRow(piv[i], &systems[k], &systems[i])
 				}
 				//wg.Wait()
 				break
 			}
+
+			//continue
 		}
 		if piv[i] == -1 {
 			fmt.Println("Fail to generate at {i}th row!", i)
@@ -130,6 +139,8 @@ func (r *OKVS) Encode(kvs []KV) *OKVS {
 		}
 		r.P[piv[i]] = res.Xor(systems[i].Value)
 	}
+	//e := time.Since(s)
+	//fmt.Println(e)
 	return r
 }
 
@@ -140,7 +151,7 @@ func (r *OKVS) Decode(key []byte) *big.Int {
 	res = res.ToWidth(32, bitarray.AlignRight)
 	for j := pos; j < r.W+pos; j++ {
 		if row.BitAt(j-pos) == 1 {
-			//index := j + pos
+			r.P[j] = r.P[j].ToWidth(32, bitarray.AlignRight)
 			res = res.Xor(r.P[j])
 		}
 	}
