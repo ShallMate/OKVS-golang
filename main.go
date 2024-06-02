@@ -15,6 +15,9 @@ import (
 	"github.com/tunabay/go-bitarray"
 )
 
+var shift time.Duration = 0
+var xor time.Duration = 0
+
 func generateRandomBytes(length int) []byte {
 	bytes := make([]byte, length)
 	for i := 0; i < length; i++ {
@@ -23,22 +26,28 @@ func generateRandomBytes(length int) []byte {
 	return bytes
 }
 
-func TestLeft() {
-	b1 := bitarray.MustParse("100111")
-	//b2 := bitarray.MustParse("101000")
-	b1t := b1.ShiftLeft(3)
-	fmt.Println(b1t)
-	fmt.Println(b1)
+func TestLeft(key []byte) {
+	bandsize := 55
+	hashBytes := okvs.HashToFixedSize(bandsize, key)
+	band := bitarray.NewFromBytes(hashBytes, 0, bandsize)
+	rand.Seed(time.Now().UnixNano())
+	// 生成一个随机数（例如：0到99之间）
+	k := rand.Intn(bandsize * 8)
+	s := time.Now()
+	band.ShiftLeft(k)
+	e := time.Since(s)
+	shift = shift + e
 }
 
-func TestXor() {
-	b1 := bitarray.NewBuffer(360)
-	b2 := bitarray.NewBuffer(360)
+func TestXor(key []byte) {
+	bandsize := 60
+	hashBytes := okvs.HashToFixedSize(bandsize, key)
 	s := time.Now()
-	b1.XorAt(0, b2)
+	for i := 0; i < bandsize; i++ {
+		hashBytes[i] = hashBytes[i] ^ hashBytes[i]
+	}
 	e := time.Since(s)
-	fmt.Println(e)
-	fmt.Println(b1)
+	xor = xor + e
 }
 
 func TestXor1() {
@@ -73,8 +82,8 @@ func Pdecode(wg *sync.WaitGroup, i int, iend int, kvs []okvs.KV, okvs *okvs.OKVS
 
 /*
 func main() {
-	n := 1048576
-	n1 := 1 << 24
+	n := 16384
+	//n1 := 1 << 24
 	e := 1.03
 	m := int(math.Round(float64(n) * e))
 
@@ -252,11 +261,15 @@ func main() {
 		R: m - w,
 		P: make([]uint32, m),
 	}
+
 	s1 := time.Now()
 	okvs.Encode(kvs)
 	end := time.Since(s1)
 	fmt.Println("e =", e)
 	fmt.Printf("encoing n = %d, time = %s\n", n, end)
+
+	//okvs1.SerializeOKVSBKToFile("okvsbk.bin")
+	//okvs2, _ := okvs.DeserializeOKVSBKFromFile("okvsbk.bin")
 	//threadnum := 128
 	//block := n / threadnum
 	s2 := time.Now()
@@ -264,6 +277,29 @@ func main() {
 	//wg.Wait()
 	end = time.Since(s2)
 	fmt.Printf("decoing n = %d, time = %s\n", n, end)
-	//TestXor()
-	//TestXor2()
 }
+
+/*
+func main() {
+	n := 1000000
+	//n1 := 1 << 24
+
+	// 创建长度为 n 的 KV 结构体切片
+
+	// 输出 KV 结构体切片
+
+		for i := 0; i < int(n); i++ {
+			key := generateRandomBytes(8)
+			TestLeft(key)
+		}
+
+	//fmt.Println("shift row", shift)
+	for i := 0; i < int(n); i++ {
+		key := generateRandomBytes(8)
+		TestXor(key)
+	}
+	fmt.Println("shift row", shift*2)
+
+	fmt.Println("xor", xor)
+}
+*/

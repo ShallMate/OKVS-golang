@@ -109,7 +109,6 @@ func (r *OKVSBK) Encode(kvs []KVBK) *OKVSBK {
 		return nil
 	}
 	systems := r.Init(kvs)
-	//fmt.Println("初始化完毕")
 	sort.Slice(systems, func(i, j int) bool {
 		return systems[i].Pos < systems[j].Pos
 	})
@@ -120,7 +119,6 @@ func (r *OKVSBK) Encode(kvs []KVBK) *OKVSBK {
 	//var wg sync.WaitGroup
 	//block := 4096
 	for i := 0; i < r.N; i++ {
-		//fmt.Println(i)
 		for j := 0; j < r.W; j++ {
 			if getBit(systems[i].Row[int(j/8)], j%8) {
 				piv[i] = j + systems[i].Pos
@@ -160,11 +158,77 @@ func (r *OKVSBK) Encode(kvs []KVBK) *OKVSBK {
 			return nil
 		}
 	}
+	for i := r.N - 1; i >= 0; i-- {
+		var res uint32 = 0
+		for j := 0; j < r.W; j++ {
+			if getBit(systems[i].Row[int(j/8)], j%8) {
+				index := systems[i].Pos + j
+				res = res ^ r.P[index]
+			}
+		}
+		r.P[piv[i]] = res ^ systems[i].Value
+	}
+	return r
+}
+
+func (r *OKVSBK) ShiftRowBK(wg *sync.WaitGroup, i int, iend int, pivi int, systems *[]SystemBK) {
+	defer wg.Done()
+	for k := i; k < iend; k++ {
+		if (*systems)[k].Pos <= pivi {
+			posk := pivi - (*systems)[k].Pos
+			if getBit((*systems)[k].Row[int(posk/8)], posk%8) {
+				shiftnum := (*systems)[k].BPos - (*systems)[i].BPos
+				for b := 0; b < r.B-shiftnum; b++ {
+					(*systems)[k].Row[b] = (*systems)[k].Row[b] ^ (*systems)[i].Row[b+shiftnum]
+				}
+				(*systems)[k].Value = (*systems)[k].Value ^ (*systems)[i].Value
+			}
+		}
+	}
+}
+
+func (r *OKVSBK) ParEncode(kvs []KVBK) *OKVSBK {
+	//fmt.Println("开始编码")
+	if len(kvs) != r.N {
+		fmt.Println("r.N must equal to len(kvs)")
+		return nil
+	}
+	systems := r.Init(kvs)
+	sort.Slice(systems, func(i, j int) bool {
+		return systems[i].Pos < systems[j].Pos
+	})
+	piv := make([]int, r.N)
+	for i := range piv {
+		piv[i] = -1
+	}
+	var wg sync.WaitGroup
+	for i := 0; i < r.N; i++ {
+		for j := 0; j < r.W; j++ {
+			if getBit(systems[i].Row[int(j/8)], j%8) {
+				piv[i] = j + systems[i].Pos
+				threadnum := 256
+				for k := i + 1; ; k = k + threadnum {
+					if k+threadnum < r.N {
+						wg.Add(1)
+						go r.ShiftRowBK(&wg, k, k+threadnum, piv[i], &systems)
+					} else {
+						wg.Add(1)
+						go r.ShiftRowBK(&wg, k, r.N, piv[i], &systems)
+						break
+					}
+				}
+				break
+			}
+		}
+		wg.Wait()
+		if piv[i] == -1 {
+			//fmt.Printf("Fail to generate at {%d}th row!\n", i)
+			return nil
+		}
+	}
 	index := 0
 	for i := r.N - 1; i >= 0; i-- {
-		//reszeroBytes := make([]byte, 4)
 		var res uint32 = 0
-		//res = res.ToWidth(32, bitarray.AlignRight)
 		for j := 0; j < r.W; j++ {
 			if getBit(systems[i].Row[int(j/8)], j%8) {
 				index = systems[i].Pos + j
@@ -181,10 +245,8 @@ func (r *OKVSBK) Decode(key []byte) uint32 {
 	pos = int(pos/8) * 8
 	row := r.hash2(key)
 	var res uint32 = 0
-	//res = res.ToWidth(32, bitarray.AlignRight)
 	for j := pos; j < r.W+pos; j++ {
 		if getBit(row[(j-pos)/8], (j-pos)%8) {
-			//index := j + pos
 			res = res ^ r.P[j]
 		}
 	}

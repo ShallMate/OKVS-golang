@@ -112,8 +112,6 @@ func (r *OKVS) Encode(kvs []KV) *OKVS {
 				//wg.Wait()
 				break
 			}
-
-			//continue
 		}
 		if piv[i] == -1 {
 			fmt.Println("Fail to generate at {i}th row!", i)
@@ -121,7 +119,6 @@ func (r *OKVS) Encode(kvs []KV) *OKVS {
 		}
 	}
 	for i := r.N - 1; i >= 0; i-- {
-		//reszeroBytes := make([]byte, 4)
 		res := bitarray.New(0)
 		res = res.ToWidth(32, bitarray.AlignRight)
 		for j := 0; j < r.W; j++ {
@@ -133,8 +130,6 @@ func (r *OKVS) Encode(kvs []KV) *OKVS {
 		}
 		r.P[piv[i]] = res.Xor(systems[i].Value)
 	}
-	//e := time.Since(s)
-	//fmt.Println(e)
 	return r
 }
 
