@@ -3,9 +3,26 @@ package okvs
 import (
 	"encoding/binary"
 	"fmt"
+	"os"
 	"runtime"
 	"sort"
+	"sync"
+	"unsafe"
+
+	"golang.org/x/crypto/blake2b"
 )
+
+/*
+#cgo CXXFLAGS: -O2 -Wall -march=native -mavx2 -finline-functions
+#cgo LDFLAGS: -lstdc++
+#include <stdint.h>
+
+// 声明 C++ 函数
+void xor_shift_simd(uint8_t* result, uint8_t* arr1, uint8_t* arr2, int shifts, int shiftnum);
+extern uint32_t optimized_xor(uint8_t* row, uint32_t* r_P, int W, int Pos, int Value);
+
+*/
+import "C"
 
 // 定义System结构体
 type SystemBK struct {
@@ -28,6 +45,26 @@ func init() {
 	runtime.GOMAXPROCS(runtime.NumCPU()) // 使用所有可用的CPU核心
 }
 
+func HashToFixedSize(bytesize int, key []byte) []byte {
+	if bytesize <= 64 {
+		hash, _ := blake2b.New(bytesize, nil)
+		hash.Write(key)
+		return hash.Sum(nil)
+	}
+
+	// If bytesize > 64, generate multiple hashes and concatenate them
+	numHashes := (bytesize + 63) / 64 // Calculate the number of 64-byte chunks needed
+	hashResult := make([]byte, 0, numHashes*64)
+	for i := 0; i < numHashes; i++ {
+		hash, _ := blake2b.New(64, nil)
+		hash.Write(key)
+		// Add different data to each hash to ensure uniqueness
+		hash.Write([]byte(fmt.Sprintf("%d", i)))
+		hashResult = append(hashResult, hash.Sum(nil)...)
+	}
+	return hashResult[:bytesize]
+}
+
 func getBit(b byte, n int) bool {
 	n = 7 - n
 	return (b & (1 << n)) > 0
@@ -44,7 +81,7 @@ func (r *OKVSBK) hash1(bytesize int, key []byte) int {
 	return hashkeyint
 }
 
-func (r *OKVSBK) hash2(pos int, key []byte) []byte {
+func (r *OKVSBK) hash2(key []byte) []byte {
 	bandsize := r.W / 8
 	hashBytes := HashToFixedSize(bandsize, key)
 	return hashBytes
@@ -54,7 +91,7 @@ func (r *OKVSBK) SetLine(i int, system *SystemBK, kv *KVBK) {
 	system.Pos = r.hash1(4, kv.Key)
 	system.BPos = int(system.Pos / 8)
 	system.Pos = system.BPos * 8
-	system.Row = r.hash2(system.Pos, kv.Key)
+	system.Row = r.hash2(kv.Key)
 	system.Value = kv.Value
 }
 
@@ -67,7 +104,6 @@ func (r *OKVSBK) Init(kvs []KVBK) []SystemBK {
 }
 
 func (r *OKVSBK) Encode(kvs []KVBK) *OKVSBK {
-	//fmt.Println("开始编码")
 	if len(kvs) != r.N {
 		fmt.Println("r.N must equal to len(kvs)")
 		return nil
@@ -77,46 +113,61 @@ func (r *OKVSBK) Encode(kvs []KVBK) *OKVSBK {
 	sort.Slice(systems, func(i, j int) bool {
 		return systems[i].Pos < systems[j].Pos
 	})
-	//fmt.Println("排序完成")
-	//fmt.Println("排序完毕")
 	piv := make([]int, r.N)
 	for i := range piv {
 		piv[i] = -1
 	}
+	//var wg sync.WaitGroup
+	//block := 4096
 	for i := 0; i < r.N; i++ {
 		//fmt.Println(i)
 		for j := 0; j < r.W; j++ {
-			//fmt.Println(systems[i].Row)
 			if getBit(systems[i].Row[int(j/8)], j%8) {
 				piv[i] = j + systems[i].Pos
 				for k := i + 1; k < r.N; k++ {
-					if systems[k].Pos <= piv[i] {
-						posk := piv[i] - systems[k].Pos
-						if getBit(systems[k].Row[int(posk/8)], posk%8) {
-							shiftnum := systems[k].BPos - systems[i].BPos
-							for b := 0; b < r.B-shiftnum; b++ {
+					if systems[k].Pos > piv[i] {
+						break
+					}
+					posk := piv[i] - systems[k].Pos
+					if getBit(systems[k].Row[int(posk/8)], posk%8) {
+						shiftnum := systems[k].BPos - systems[i].BPos
+						shifts := r.B - shiftnum
+						//result := make([]byte, shifts)
+						C.xor_shift_simd(
+							(*C.uint8_t)(unsafe.Pointer(&systems[k].Row[0])),
+							(*C.uint8_t)(unsafe.Pointer(&systems[i].Row[0])),
+							(*C.uint8_t)(unsafe.Pointer(&systems[k].Row[0])),
+							C.int(shifts),
+							C.int(shiftnum),
+						)
+						/*
+							for b := 0; b < shifts; b++ {
 								systems[k].Row[b] = systems[k].Row[b] ^ systems[i].Row[b+shiftnum]
 							}
-							systems[k].Value = systems[k].Value ^ systems[i].Value
-						}
+						*/
+						//copy(systems[k].Row[:shifts], result)
+						systems[k].Value = systems[k].Value ^ systems[i].Value
 					}
+
 				}
-				//wg.Wait()
+				//
 				break
 			}
 		}
 		if piv[i] == -1 {
 			fmt.Println("Fail to generate at {i}th row!", i)
+			os.Exit(1)
 			return nil
 		}
 	}
+	index := 0
 	for i := r.N - 1; i >= 0; i-- {
 		//reszeroBytes := make([]byte, 4)
 		var res uint32 = 0
 		//res = res.ToWidth(32, bitarray.AlignRight)
 		for j := 0; j < r.W; j++ {
 			if getBit(systems[i].Row[int(j/8)], j%8) {
-				index := systems[i].Pos + j
+				index = systems[i].Pos + j
 				res = res ^ r.P[index]
 			}
 		}
@@ -128,7 +179,7 @@ func (r *OKVSBK) Encode(kvs []KVBK) *OKVSBK {
 func (r *OKVSBK) Decode(key []byte) uint32 {
 	pos := r.hash1(4, key)
 	pos = int(pos/8) * 8
-	row := r.hash2(pos, key)
+	row := r.hash2(key)
 	var res uint32 = 0
 	//res = res.ToWidth(32, bitarray.AlignRight)
 	for j := pos; j < r.W+pos; j++ {
@@ -139,4 +190,35 @@ func (r *OKVSBK) Decode(key []byte) uint32 {
 	}
 	return res
 
+}
+
+func (r *OKVSBK) ParDecode(kvs []KVBK) []uint32 {
+	block := 2048
+	i := 0
+	end := i + block
+	res := make([]uint32, r.N)
+	var wg sync.WaitGroup
+	for {
+		if end >= r.N {
+			end = r.N
+		}
+		if i >= r.N {
+			break
+		}
+		wg.Add(1)
+		go func(i, end int) {
+			defer wg.Done()
+			for j := i; j < end; j++ {
+				res[j] = r.Decode(kvs[j].Key)
+				if res[j] != kvs[j].Value {
+					fmt.Println("decoding error")
+					os.Exit(1)
+				}
+			}
+		}(i, end)
+		i = i + block
+		end = end + block
+	}
+	wg.Wait()
+	return res
 }

@@ -5,6 +5,8 @@ import (
 	"math"
 	"math/big"
 	"math/rand"
+	"os"
+	"runtime/pprof"
 	"sync"
 	"time"
 
@@ -215,9 +217,21 @@ func main() {
 */
 
 func main() {
-	n := 65536
+	// 创建一个文件用于保存性能分析数据
+	f, err := os.Create("cpu.prof")
+	if err != nil {
+		panic(err)
+	}
+	defer f.Close()
+
+	// 开始性能分析
+	if err := pprof.StartCPUProfile(f); err != nil {
+		panic(err)
+	}
+	defer pprof.StopCPUProfile()
+	n := 1 << 20
 	//n1 := 1 << 24
-	e := 1.01
+	e := 1.03
 	m := int(math.Round(float64(n) * e))
 
 	// 创建长度为 n 的 KV 结构体切片
@@ -229,7 +243,7 @@ func main() {
 		kvs[i] = okvs.KVBK{Key: key, Value: value} // 将key和value赋值给KV结构体
 	}
 	//fmt.Printf("KV slice: %+v\n", kvs)
-	w := 360
+	w := 600
 	okvs := okvs.OKVSBK{
 		N: n,
 		M: m,
@@ -246,11 +260,7 @@ func main() {
 	//threadnum := 128
 	//block := n / threadnum
 	s2 := time.Now()
-	for i := 1; i < n; i++ {
-		//fmt.Println(okvs.Decode(kvs[i].Key))
-		//fmt.Println(kvs[i].Value)
-		//okvs.Decode(kvs[i].Key)
-	}
+	okvs.ParDecode(kvs)
 	//wg.Wait()
 	end = time.Since(s2)
 	fmt.Printf("decoing n = %d, time = %s\n", n, end)

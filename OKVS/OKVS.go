@@ -9,7 +9,6 @@ import (
 	"sync"
 
 	"github.com/tunabay/go-bitarray"
-	"golang.org/x/crypto/blake2b"
 )
 
 // 定义System结构体
@@ -34,11 +33,6 @@ func init() {
 type KV struct {
 	Key   []byte //key
 	Value uint32 //value
-}
-
-func HashToFixedSize(bytesize int, key []byte) []byte {
-	hash, _ := blake2b.New(bytesize, []byte(key))
-	return hash.Sum(nil)[:]
 }
 
 func (r *OKVS) hash1(bytesize int, key []byte) int {
