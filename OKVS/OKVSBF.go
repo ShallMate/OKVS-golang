@@ -33,7 +33,7 @@ func (r *OKVSBF) hash1(bytesize int, key []byte) int {
 	return hashkeyint
 }
 
-func (r *OKVSBF) hash2(pos int, key []byte) *bitarray.Buffer {
+func (r *OKVSBF) hash2(key []byte) *bitarray.Buffer {
 	bandsize := int(r.W) / 8
 	hashBytes := HashToFixedSize(bandsize, key)
 	band := bitarray.NewBufferFromByteSlice(hashBytes)
@@ -44,7 +44,7 @@ func (r *OKVSBF) Init(kvs []KVBF) []SystemBF {
 	systems := make([]SystemBF, r.N)
 	for i := 0; i < r.N; i++ {
 		systems[i].Pos = r.hash1(4, kvs[i].Key)
-		systems[i].Row = r.hash2(systems[i].Pos, kvs[i].Key)
+		systems[i].Row = r.hash2(kvs[i].Key)
 		systems[i].Value = bitarray.NewBuffer(32)
 		systems[i].Value.PutUint32(kvs[i].Value)
 	}
@@ -102,7 +102,7 @@ func (r *OKVSBF) Encode(kvs []KVBF) *OKVSBF {
 
 func (r *OKVSBF) Decode(key []byte) uint32 {
 	pos := r.hash1(4, key)
-	row := r.hash2(pos, key)
+	row := r.hash2(key)
 	res := bitarray.NewBuffer(32)
 	for j := pos; j < r.W+pos; j++ {
 		if row.BitAt(j-pos) == 1 {

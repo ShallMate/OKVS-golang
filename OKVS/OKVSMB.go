@@ -39,7 +39,7 @@ func (r *OKVSB) hash1(bytesize int, key []byte) int {
 	return hashkeyint
 }
 
-func (r *OKVSB) hash2(pos int, key []byte) *big.Int {
+func (r *OKVSB) hash2(key []byte) *big.Int {
 	bandsize := r.W / 8
 	hashBytes := HashToFixedSize(bandsize, key)
 	band := new(big.Int).SetBytes(hashBytes)
@@ -50,7 +50,7 @@ func (r *OKVSB) hash2(pos int, key []byte) *big.Int {
 func (r *OKVSB) SetLine(wg *sync.WaitGroup, i int, system *SystemB, kv *KVB) {
 	defer wg.Done()
 	system.Pos = r.hash1(4, kv.Key)
-	system.Row = r.hash2(system.Pos, kv.Key)
+	system.Row = r.hash2(kv.Key)
 	if system.Row.BitLen() != r.W {
 		system.Row = system.Row.SetBit(system.Row, r.W-1, 0)
 		fmt.Println(system.Row.BitLen())
@@ -139,7 +139,7 @@ func (r *OKVSB) Encode(kvs []KVB) *OKVSB {
 
 func (r *OKVSB) Decode(key []byte) *big.Int {
 	pos := r.hash1(4, key)
-	row := r.hash2(pos, key)
+	row := r.hash2(key)
 	res := big.NewInt(0)
 	//res = res.ToWidth(32, bitarray.AlignRight)
 	for j := pos; j < r.W+pos; j++ {
